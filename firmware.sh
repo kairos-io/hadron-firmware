@@ -245,6 +245,19 @@ if [[ $BUILD -eq 1 ]]; then
   echo "Building all firmware targets..."
 
   ## Build all targets
+  # Build the base target first as it takes a bit of time
+  # No tag needed for base as we dont push it, just build it to speed up the other builds
+  echo "Building: base"
+  set +e
+  output=$(docker build -f Dockerfile.firmware --target "base" . 2>&1)
+  status=$?
+  set -e
+  # shellcheck disable=SC2181
+  if [ $status -ne 0 ]; then
+    echo "Docker build failed:"
+    echo "$output"
+    exit 1
+  fi
   for folder in $folders; do
     if [[ $folder =~ ^[0-9] ]]; then
       target=$(echo "$folder" | rev | tr '.' '-')
@@ -287,7 +300,7 @@ if [[ $BUILD -eq 1 ]]; then
       exit 1
     fi
     if [[ $PUSH -eq 1 ]]; then
-      echo "Pushing image ${REPOSITORY}/linux-firmware-${target}:${FIRMWARE_VERSION} to repository..."
+      echo "Pushing image ${REPOSITORY}/linux-firmware-intel-${target}:${FIRMWARE_VERSION} to repository..."
       docker push ${REPOSITORY}/linux-firmware-"${target}":"${FIRMWARE_VERSION}"
       echo "Push completed successfully."
     fi
@@ -325,8 +338,8 @@ if [[ $BUILD -eq 1 ]]; then
     exit 1
   fi
   if [[ $PUSH -eq 1 ]]; then
-    echo "Pushing image ${REPOSITORY}/linux-firmware-${target}:${FIRMWARE_VERSION} to repository..."
-    docker push ${REPOSITORY}/linux-firmware-"${target}":"${FIRMWARE_VERSION}"
+    echo "Pushing image ${REPOSITORY}/linux-firmware-intel-generic:"${FIRMWARE_VERSION}" to repository..."
+    docker push ${REPOSITORY}/linux-firmware-intel-generic:"${FIRMWARE_VERSION}"
     echo "Push completed successfully."
   fi
   echo "Building: qcom"
@@ -340,8 +353,8 @@ if [[ $BUILD -eq 1 ]]; then
     exit 1
   fi
   if [[ $PUSH -eq 1 ]]; then
-    echo "Pushing image ${REPOSITORY}/linux-firmware-${target}:${FIRMWARE_VERSION} to repository..."
-    docker push ${REPOSITORY}/linux-firmware-"${target}":"${FIRMWARE_VERSION}"
+    echo "Pushing image ${REPOSITORY}/linux-firmware-qcom-generic:"${FIRMWARE_VERSION}" to repository..."
+    docker push ${REPOSITORY}/linux-firmware-qcom-generic:"${FIRMWARE_VERSION}"
     echo "Push completed successfully."
   fi
   echo "Building: uncategorized"
@@ -356,8 +369,8 @@ if [[ $BUILD -eq 1 ]]; then
     exit 1
   fi
   if [[ $PUSH -eq 1 ]]; then
-    echo "Pushing image ${REPOSITORY}/linux-firmware-${target}:${FIRMWARE_VERSION} to repository..."
-    docker push ${REPOSITORY}/linux-firmware-"${target}":"${FIRMWARE_VERSION}"
+    echo "Pushing image ${REPOSITORY}/linux-firmware-uncategorized:"${FIRMWARE_VERSION}" to repository..."
+    docker push ${REPOSITORY}/linux-firmware-uncategorized:"${FIRMWARE_VERSION}"
     echo "Push completed successfully."
   fi
   echo "All builds completed successfully."
