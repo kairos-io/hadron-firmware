@@ -111,6 +111,11 @@ if [[ $DOCKERFILE_ONLY -eq 0 && $BUILD -eq 0 && $SYSEXT -eq 0 ]]; then
   exit 1
 fi
 
+## Check if firmware version has a revision part (e.g., 20231115-1) and handle it properly as we want to drap that, the revisions are just for us
+if [[ $FIRMWARE_VERSION == *"-"* ]]; then
+  FIRMWARE_VERSION="${FIRMWARE_VERSION%%-*}"
+fi
+
 echo "Generating Dockerfile.firmware for linux-firmware version: $FIRMWARE_VERSION"
 cat <<EOF > Dockerfile.firmware
 ARG FIRMWARE_VERSION=$FIRMWARE_VERSION
@@ -300,8 +305,8 @@ if [[ $BUILD -eq 1 ]]; then
       exit 1
     fi
     if [[ $PUSH -eq 1 ]]; then
-      echo "Pushing image ${REPOSITORY}/linux-firmware-intel-${target}:${FIRMWARE_VERSION} to repository..."
-      docker push ${REPOSITORY}/linux-firmware-"${target}":"${FIRMWARE_VERSION}"
+      echo "Pushing image ${REPOSITORY}/linux-firmware-intel-"${target}":"${FIRMWARE_VERSION}" to repository..."
+      docker push ${REPOSITORY}/linux-firmware-intel-"${target}":"${FIRMWARE_VERSION}"
       echo "Push completed successfully."
     fi
   done
@@ -320,8 +325,8 @@ if [[ $BUILD -eq 1 ]]; then
       exit 1
     fi
     if [[ $PUSH -eq 1 ]]; then
-      echo "Pushing image ${REPOSITORY}/linux-firmware-${target}:${FIRMWARE_VERSION} to repository..."
-      docker push ${REPOSITORY}/linux-firmware-"${target}":"${FIRMWARE_VERSION}"
+      echo "Pushing image ${REPOSITORY}/linux-firmware-qcom-"${target}":"${FIRMWARE_VERSION}" to repository..."
+      docker push ${REPOSITORY}/linux-firmware-qcom-"${target}":"${FIRMWARE_VERSION}"
       echo "Push completed successfully."
     fi
   done
