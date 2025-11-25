@@ -1,0 +1,2 @@
+This keys are for testing purposes only. Do not use them in production environments.
+They are using to test building the firmware sysexts with a given key and certificate and they should be considered compromised.

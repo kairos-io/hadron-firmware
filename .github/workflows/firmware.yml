@@ -30,40 +30,44 @@ jobs:
             [worker.oci]
               max-parallelism = 4
       - name: Log in to the Container registry
-        if: github.event_name != 'pull_request'
+        if: startsWith(github.ref, 'refs/tags/')
         uses: docker/login-action@28fdb31ff34708d19615a74d67103ddc2ea9725c
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build firmware
+        if: !startsWith(github.ref, 'refs/tags/')
         run: |
           ./firmware.sh --build
       - name: Publish firmware on tag
-        if: github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
           ./firmware.sh --build --push --repository ghcr.io/${{ github.repository }} --firmware-version ${{ github.ref_name }}
       - name: Build sysexts
         run: |
           ./firmware.sh --sysext
           mv build unsigned-sysext
+      - name: Build signed sysext
+        if: !startsWith(github.ref, 'refs/tags/')
+        run: |
+          ./firmware.sh --sysext --private-key .github/keys/PK.key --certificate .github/keys/PK.pem
+          mv build signed-sysext
+      - name: Upload sysext artifacts
+        if: !startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-sysext
+          path: unsigned-sysext/
+      - name: Upload signed sysext artifacts
+        if: !startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+            name: signed-sysext
+            path: signed-sysext/
       - name: Release sysexts on tag
         uses: softprops/action-gh-release@9d7c94cfd0a1f3ed45544c887983e9fa900f0564
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
             unsigned-sysext/*
-      - name: Build signed sysext
-        run: |
-          ./firmware.sh --sysext --private-key tests/assets/keys/PK.key --certificate tests/assets/keys/PK.pem
-          mv build signed-sysext
-      - name: Upload sysext artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: unsigned-sysext
-          path: unsigned-sysext/
-      - name: Upload signed sysext artifacts
-        uses: actions/upload-artifact@v4
-        with:
-            name: signed-sysext
-            path: signed-sysext/
