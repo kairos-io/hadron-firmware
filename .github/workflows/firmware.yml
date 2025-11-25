@@ -44,7 +44,13 @@ jobs:
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
         run: |
           ./firmware.sh --build --push --repository ghcr.io/${{ github.repository }} --firmware-version ${{ github.ref_name }}
+      - name: Build sysexts on tag
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          ./firmware.sh --repository ghcr.io/${{ github.repository }} --sysext
+          mv build unsigned-sysext
       - name: Build sysexts
+        if: ${{ ! startsWith(github.ref, 'refs/tags/') }}
         run: |
           ./firmware.sh --sysext
           mv build unsigned-sysext
