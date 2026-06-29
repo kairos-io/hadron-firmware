@@ -27,11 +27,12 @@ CERTIFICATE=""
 PRIVATE_KEY=""
 CACHE_FROM=""
 CACHE_TO=""
-## Size thresholds (in MB) used to decide whether a folder must be split into
-## separate, smaller firmware layers so a single firmware pull does not drag in a
-## multi-hundred-MB layer. Override with --split-threshold-mb / --subfolder-threshold-mb.
-SPLIT_THRESHOLD_MB=300
-SUBFOLDER_THRESHOLD_MB=100
+## A folder is only split into separate firmware layers when it is BOTH big in total
+## (>= SPLIT_THRESHOLD_MB) AND has subfolders to split on. A folder with no subfolders
+## is never split, so no single firmware ever needs 2 layers. A folder with many tiny
+## subfolders stays bundled; one with a large total spread across subfolders gets split.
+## Override with --split-threshold-mb.
+SPLIT_THRESHOLD_MB=100
 
 DESTDIR="${DESTDIR:-/usr/local/lib/firmware}"
 
@@ -86,10 +87,6 @@ while [[ $# -gt 0 ]]; do
       SPLIT_THRESHOLD_MB="$2"
       shift 2
       ;;
-    --subfolder-threshold-mb)
-      SUBFOLDER_THRESHOLD_MB="$2"
-      shift 2
-      ;;
     --help|-h)
       echo "Usage: $0 [options]"
       echo "Options:"
@@ -100,8 +97,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --sysext                      Create sysext images for the built firmware images"
       echo "  --push                        Push the built images to the repository (requires --build)"
       echo "  --repository <repo>           Specify the Docker repository (default: $REPOSITORY)"
-      echo "  --split-threshold-mb <mb>     Folder size that triggers splitting subfolders (default: $SPLIT_THRESHOLD_MB)"
-      echo "  --subfolder-threshold-mb <mb> Subfolder size that gets its own target (default: $SUBFOLDER_THRESHOLD_MB)"
+      echo "  --split-threshold-mb <mb>     Total folder size (with subfolders) that triggers splitting (default: $SPLIT_THRESHOLD_MB)"
       echo "  --cache-from <spec>           Docker cache source spec (e.g. type=gha)"
       echo "  --cache-to <spec>             Docker cache destination spec (e.g. type=gha,mode=max)"
       echo "  --help, -h                    Show this help message"
@@ -201,29 +197,27 @@ fi
 
 ## Discover the firmware layout on the fly from the built base image.
 ## The container prints one record per top level folder:
-##   DIR|<folder>                       ship the whole folder as one target
-##   GENERIC|<folder>|<big subfolders>   split folder, big subfolders shipped separately
-echo "Analyzing firmware folders (split>${SPLIT_THRESHOLD_MB}MB, subfolder>${SUBFOLDER_THRESHOLD_MB}MB)..."
+##   DIR|<folder>                ship the whole folder as one target
+##   GENERIC|<folder>|<subfolders>   split: each subfolder ships separately, loose
+##                                   files (and anything left) ship as <folder>-generic
+echo "Analyzing firmware folders (split when total>=${SPLIT_THRESHOLD_MB}MB and has subfolders)..."
 MANIFEST=$(docker run --rm "${BASE_IMAGE_TAG}" sh -c "
   set -e
   cd /out/lib/firmware
   SPLIT=${SPLIT_THRESHOLD_MB}
-  SUB=${SUBFOLDER_THRESHOLD_MB}
   for d in \$(ls -d */ 2>/dev/null | tr -d '/'); do
     total=\$(du -sm \"\$d\" | cut -f1)
-    if [ \"\$total\" -ge \"\$SPLIT\" ]; then
-      big=''
-      for s in \$(ls -d \"\$d\"/*/ 2>/dev/null | sed 's#/\$##'); do
-        sname=\${s#\$d/}
-        ssize=\$(du -sm \"\$s\" | cut -f1)
-        if [ \"\$ssize\" -ge \"\$SUB\" ]; then big=\"\$big \$sname\"; fi
-      done
-      if [ -n \"\$big\" ]; then
-        echo \"GENERIC|\$d|\${big# }\"
-        continue
-      fi
+    subs=''
+    for s in \$(ls -d \"\$d\"/*/ 2>/dev/null | sed 's#/\$##'); do
+      subs=\"\$subs \${s#\$d/}\"
+    done
+    # Only split big folders that actually have subfolders to split on. A folder with
+    # no subfolders is shipped whole no matter how big, so no firmware needs 2 layers.
+    if [ \"\$total\" -ge \"\$SPLIT\" ] && [ -n \"\$subs\" ]; then
+      echo \"GENERIC|\$d|\${subs# }\"
+    else
+      echo \"DIR|\$d\"
     fi
-    echo \"DIR|\$d\"
   done
 ")
 
