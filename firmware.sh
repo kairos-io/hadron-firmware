@@ -15,7 +15,7 @@ set -euo pipefail
 ##    This is size driven, so any future huge folder is handled the same way without
 ##    changing the script.
 
-FIRMWARE_VERSION="20260221"
+FIRMWARE_VERSION="20260622"
 
 SINGLE_TARGET=""
 DOCKERFILE_ONLY=0
@@ -141,7 +141,7 @@ FULL_CACHE_ARGS=("${CACHE_FROM_ARGS[@]}" "${CACHE_EXPORT_ARGS[@]}")
 ## Sanitize a folder name into a valid, lowercase docker target name.
 ## - folders starting with a number get reversed so the name does not start with a digit
 ## - dots are turned into dashes
-## - uppercase names are lowercased
+## - all names are lowercased to satisfy docker target/tag constraints
 sanitize_target() {
   local folder="$1" target
   if [[ $folder =~ ^[0-9] ]]; then
@@ -149,9 +149,7 @@ sanitize_target() {
   else
     target=${folder//./-}
   fi
-  if [[ $folder =~ ^[A-Z0-9_-]+$ ]]; then
-    target=${target,,}
-  fi
+  target=${target,,}
   echo "$target"
 }
 
