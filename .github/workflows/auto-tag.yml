@@ -34,3 +34,9 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag "${{ steps.version.outputs.version }}"
           git push origin "${{ steps.version.outputs.version }}"
+      - name: Trigger firmware build for new tag
+        if: steps.tag_check.outputs.exists == 'false'
+        run: |
+          gh workflow run firmware.yml --ref "${{ steps.version.outputs.version }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
