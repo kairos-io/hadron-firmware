@@ -2,31 +2,18 @@
 
 set -euo pipefail
 
-## List of folders to create separate firmware images for
-## Generate this list by pulling the linux-firmware building the modules into a temp destdir and running:
-## ls -d */ | tr -d '/' | xargs
-## for example some folders are in the repo but not build like
-# carl9170fw is skipped as it requires to build it by itself?
-# Important to check out the proper tag as things go away and are added over time
-# TODO: Automate the generation of this list byt pulling the linux-firmware repo and listing the folders
-# then fix the intel/qcom special handling below
-folders="3com acenic adaptec advansys aeonsemi airoha amd amdgpu amdnpu amdtee amd-ucode
-amlogic amphion ar3k arm ath10k ath11k ath12k ath6k ath9k_htc atmel atusb av7110 bnx2
-bnx2x brcm cadence cavium cirrus cis cnm cpia2 cxgb3 cxgb4 cypress dabusb dell dpaa2
-dsp56k e100 edgeport emi26 emi62 ene-ub6250 ess go7007 HP i915 imx inside-secure
-isci ixp4xx kaweth keyspan keyspan_pda korg LENOVO libertas liquidio matrox mediatek
-mellanox meson microchip moxa mrvl mwl8k mwlwifi myricom netronome nvidia nxp ositech
-powervr qca qed qlogic r128 radeon realtek rockchip rsi rtl_bt rtl_nic rtlwifi
-rtw88 rtw89 sb16 slicoss sun sxg tehuti ti ti-connectivity tigon ti-keystone
-ttusb-budget ueagle-atm vicam vxge wfx xe yam yamaha"
-
-qcom_folders="aic100 apq8016 apq8096 kaanapali
-qcm2290 qcm6490 qcs615 qcs6490 qcs8300 qdu100 qrb4210 sa8775p sc8280xp sdm845
-sdx61 sm8250 sm8550 sm8650
-venus-1.8 venus-4.2 venus-5.2 venus-5.4 venus-6.0 vpu x1e80100 x1p42100"
-
-intel_folders="avs catpt ice ipu ish iwlwifi qat vpu vsc"
-
+## Folder layout is discovered automatically from the built linux-firmware tree.
+## No hardcoded lists are kept here: each release is analyzed on the fly so new
+## folders are picked up automatically and stale ones disappear without manual edits.
+##
+## Discovery rules:
+##  - Every top level folder in /lib/firmware becomes its own target.
+##  - Loose files in the root of /lib/firmware go into the "uncategorized" target.
+##  - Folders that are very large AND contain very large subfolders (today this is
+##    intel and qcom) are split: each big subfolder gets its own target and the rest
+##    of the folder (loose files + small subfolders) ships as <folder>-generic.
+##    This is size driven, so any future huge folder is handled the same way without
+##    changing the script.
 
 FIRMWARE_VERSION="20260221"
 
@@ -40,6 +27,12 @@ CERTIFICATE=""
 PRIVATE_KEY=""
 CACHE_FROM=""
 CACHE_TO=""
+## A folder is only split into separate firmware layers when it is BOTH big in total
+## (>= SPLIT_THRESHOLD_MB) AND has subfolders to split on. A folder with no subfolders
+## is never split, so no single firmware ever needs 2 layers. A folder with many tiny
+## subfolders stays bundled; one with a large total spread across subfolders gets split.
+## Override with --split-threshold-mb.
+SPLIT_THRESHOLD_MB=100
 
 DESTDIR="${DESTDIR:-/usr/local/lib/firmware}"
 
@@ -90,19 +83,24 @@ while [[ $# -gt 0 ]]; do
       CACHE_TO="$2"
       shift 2
       ;;
+    --split-threshold-mb)
+      SPLIT_THRESHOLD_MB="$2"
+      shift 2
+      ;;
     --help|-h)
       echo "Usage: $0 [options]"
       echo "Options:"
-      echo "  --dockerfile-only           Generate only the Dockerfile.firmware"
-      echo "  --target <target_name>      Build only the specified target"
-      echo "  --firmware-version <ver>    Specify the linux-firmware version (default: $FIRMWARE_VERSION)"
-      echo "  --build                     Build the firmware images"
-      echo "  --sysext                    Create sysext images for the built firmware images"
-      echo "  --push                      Push the built images to the repository (requires --build)"
-      echo "  --repository <repo>         Specify the Docker repository (default: $REPOSITORY)"
-      echo "  --cache-from <spec>         Docker cache source spec (e.g. type=gha)"
-      echo "  --cache-to <spec>           Docker cache destination spec (e.g. type=gha,mode=max)"
-      echo "  --help, -h                  Show this help message"
+      echo "  --dockerfile-only             Generate only the Dockerfile.firmware"
+      echo "  --target <target_name>        Build only the specified target"
+      echo "  --firmware-version <ver>      Specify the linux-firmware version (default: $FIRMWARE_VERSION)"
+      echo "  --build                       Build the firmware images"
+      echo "  --sysext                      Create sysext images for the built firmware images"
+      echo "  --push                        Push the built images to the repository (requires --build)"
+      echo "  --repository <repo>           Specify the Docker repository (default: $REPOSITORY)"
+      echo "  --split-threshold-mb <mb>     Total folder size (with subfolders) that triggers splitting (default: $SPLIT_THRESHOLD_MB)"
+      echo "  --cache-from <spec>           Docker cache source spec (e.g. type=gha)"
+      echo "  --cache-to <spec>             Docker cache destination spec (e.g. type=gha,mode=max)"
+      echo "  --help, -h                    Show this help message"
       exit 0
       ;;
     *)
@@ -140,8 +138,27 @@ if [[ -n "$CACHE_TO" ]]; then
 fi
 FULL_CACHE_ARGS=("${CACHE_FROM_ARGS[@]}" "${CACHE_EXPORT_ARGS[@]}")
 
-echo "Generating Dockerfile.firmware for linux-firmware version: $FIRMWARE_VERSION"
-cat <<EOF > Dockerfile.firmware
+## Sanitize a folder name into a valid, lowercase docker target name.
+## - folders starting with a number get reversed so the name does not start with a digit
+## - dots are turned into dashes
+## - uppercase names are lowercased
+sanitize_target() {
+  local folder="$1" target
+  if [[ $folder =~ ^[0-9] ]]; then
+    target=$(echo "$folder" | rev | tr '.' '-')
+  else
+    target=${folder//./-}
+  fi
+  if [[ $folder =~ ^[A-Z0-9_-]+$ ]]; then
+    target=${target,,}
+  fi
+  echo "$target"
+}
+
+BASE_IMAGE_TAG="hadron-firmware-base:${FIRMWARE_VERSION}"
+
+echo "Generating Dockerfile.base for linux-firmware version: $FIRMWARE_VERSION"
+cat <<EOF > Dockerfile.base
 ARG FIRMWARE_VERSION=$FIRMWARE_VERSION
 ARG ALPINE_VERSION=3.22.2
 
@@ -165,252 +182,150 @@ RUN ./copy-firmware.sh -j\$(nproc) -v --zstd /out/lib/firmware
 RUN ./dedup-firmware.sh /out/lib/firmware
 EOF
 
-for folder in $folders; do
-  # check if name starts with a number, if so, reverse the name
-  if [[ $folder =~ ^[0-9] ]]; then
-    target=$(echo "$folder" | rev | tr '.' '-')
+## The base image is required to inspect the firmware tree and decide which folders
+## need splitting, so we always build it first.
+echo "Building base image to discover firmware folders..."
+set +e
+output=$(docker buildx build -f Dockerfile.base -t "${BASE_IMAGE_TAG}" --target base --load "${FULL_CACHE_ARGS[@]}" . 2>&1)
+status=$?
+set -e
+if [ $status -ne 0 ]; then
+  echo "Base image build failed:"
+  echo "$output"
+  exit 1
+fi
+
+## Discover the firmware layout on the fly from the built base image.
+## The container prints one record per top level folder:
+##   DIR|<folder>                ship the whole folder as one target
+##   GENERIC|<folder>|<subfolders>   split: each subfolder ships separately, loose
+##                                   files (and anything left) ship as <folder>-generic
+echo "Analyzing firmware folders (split when total>=${SPLIT_THRESHOLD_MB}MB and has subfolders)..."
+MANIFEST=$(docker run --rm "${BASE_IMAGE_TAG}" sh -c "
+  set -e
+  cd /out/lib/firmware
+  SPLIT=${SPLIT_THRESHOLD_MB}
+  for d in \$(ls -d */ 2>/dev/null | tr -d '/'); do
+    total=\$(du -sm \"\$d\" | cut -f1)
+    subs=''
+    for s in \$(ls -d \"\$d\"/*/ 2>/dev/null | sed 's#/\$##'); do
+      subs=\"\$subs \${s#\$d/}\"
+    done
+    # Only split big folders that actually have subfolders to split on. A folder with
+    # no subfolders is shipped whole no matter how big, so no firmware needs 2 layers.
+    if [ \"\$total\" -ge \"\$SPLIT\" ] && [ -n \"\$subs\" ]; then
+      echo \"GENERIC|\$d|\${subs# }\"
+    else
+      echo \"DIR|\$d\"
+    fi
+  done
+")
+
+TARGETS=()  # name|src|dest|mode
+while IFS= read -r line; do
+  [[ -z "$line" ]] && continue
+  kind=${line%%|*}
+  rest=${line#*|}
+  if [[ $kind == "DIR" ]]; then
+    folder=$rest
+    target=$(sanitize_target "$folder")
+    TARGETS+=("${target}|/out/lib/firmware/${folder}|${DESTDIR}/${folder}/|dir")
   else
-    target=${folder//./-}
+    folder=${rest%%|*}
+    bigsubs=${rest#*|}
+    base=$(sanitize_target "$folder")
+    TARGETS+=("${base}-generic|/out/lib/firmware/${folder}|${DESTDIR}/${folder}/|split;${bigsubs}")
+    for sub in $bigsubs; do
+      st=$(sanitize_target "$sub")
+      TARGETS+=("${base}-${st}|/out/lib/firmware/${folder}/${sub}|${DESTDIR}/${folder}/${sub}/|dir")
+    done
   fi
-  # check if folder is uppercase, if so, change target to lowercase
-  if [[ $folder =~ ^[A-Z0-9_-]+$ ]]; then
-    target=${target,,}
-  fi
-  cat <<EOF >> Dockerfile.firmware
+done <<< "$MANIFEST"
+# Loose files in the root of /lib/firmware
+TARGETS+=("uncategorized|/out/lib/firmware|${DESTDIR}/|rootfiles")
 
-FROM scratch AS ${target}
-COPY --from=base /out/lib/firmware/$folder ${DESTDIR}/
+echo "Discovered ${#TARGETS[@]} firmware targets"
+
+echo "Generating Dockerfile.firmware"
+cp Dockerfile.base Dockerfile.firmware
+for entry in "${TARGETS[@]}"; do
+  IFS='|' read -r name src dest mode <<< "$entry"
+  case "$mode" in
+    dir)
+      cat <<EOF >> Dockerfile.firmware
+
+FROM scratch AS ${name}
+COPY --from=base ${src}/. ${dest}
 EOF
+      ;;
+    rootfiles)
+      cat <<EOF >> Dockerfile.firmware
+
+FROM base AS ${name}-stage
+RUN mkdir /output && find ${src} -maxdepth 1 -type f -exec cp {} /output/ \;
+
+FROM scratch AS ${name}
+COPY --from=${name}-stage /output/. ${dest}
+EOF
+      ;;
+    split\;*)
+      bigsubs=${mode#split;}
+      rm_cmd=""
+      for sub in $bigsubs; do
+        rm_cmd="${rm_cmd} && rm -rf /output/${sub}"
+      done
+      cat <<EOF >> Dockerfile.firmware
+
+FROM base AS ${name}-stage
+RUN cp -a ${src} /output${rm_cmd}
+
+FROM scratch AS ${name}
+COPY --from=${name}-stage /output/. ${dest}
+EOF
+      ;;
+  esac
 done
-
-## Intel section
-## Intel firmware requires special handling due to its nested structure.
-## we have a couple of HUGE folder and we want to ship those in a separate target BUT the files inside the intel folder
-## are a different thing, we have to ship those as well so we manage this specifically
-cat <<EOF >> Dockerfile.firmware
-
-FROM base AS intel
-RUN mkdir /output
-RUN find /out/lib/firmware/intel -maxdepth 1 -type f -exec cp {} /output/ \;
-
-FROM scratch AS intel-generic
-COPY --from=intel /output/. ${DESTDIR}/intel/
-EOF
-
-for folder in $intel_folders; do
-  # Some names have dots which are not valid for docker target names, replace dots with dashes
-  target=${folder//./-}
-cat <<EOF >> Dockerfile.firmware
-
-FROM scratch AS intel-${target}
-COPY --from=base /out/lib/firmware/intel/$folder/. ${DESTDIR}/intel/$folder/
-EOF
-done
-
-## qcom section
-## Same as inter, they got several subfolders that are huge and we want to ship them separately
-cat <<EOF >> Dockerfile.firmware
-
-FROM base AS qcom
-RUN mkdir /output
-RUN find /out/lib/firmware/qcom -maxdepth 1 -type f -exec cp {} /output/ \;
-
-FROM scratch AS qcom-generic
-COPY --from=qcom /output/. ${DESTDIR}/qcom/
-EOF
-
-for folder in $qcom_folders; do
-  # Some names have dots which are not valid for docker target names, replace dots with dashes
-  target=${folder//./-}
-  cat <<EOF >> Dockerfile.firmware
-
-FROM scratch AS qcom-${target}
-COPY --from=base /out/lib/firmware/qcom/$folder/. ${DESTDIR}/qcom/$folder/
-EOF
-done
-
-## Now finally lets do the files in the root of /out/lib/firmware
-cat <<EOF >> Dockerfile.firmware
-
-FROM base AS uncategorized-firmware
-RUN mkdir /output
-RUN find /out/lib/firmware -maxdepth 1 -type f -exec cp {} /output/ \;
-
-FROM scratch AS uncategorized
-COPY --from=uncategorized-firmware /output/. ${DESTDIR}/
-EOF
-
 
 echo "Generated Dockerfile.firmware"
 # If only generating Dockerfile, exit here so we dont remove the dockerfile
 if [[ $DOCKERFILE_ONLY -eq 1 ]]; then
+  rm -f Dockerfile.base
   exit 0
 fi
 
+build_target() {
+  local target="$1" tag="$2"
+  echo "Building: $target"
+  set +e
+  output=$(docker buildx build -f Dockerfile.firmware -t "$tag" --target "$target" --load "${CACHE_FROM_ARGS[@]}" . 2>&1)
+  status=$?
+  set -e
+  if [ $status -ne 0 ]; then
+    echo "Docker build failed:"
+    echo "$output"
+    exit 1
+  fi
+  if [[ $PUSH -eq 1 ]]; then
+    echo "Pushing image $tag to repository..."
+    docker push "$tag"
+    echo "$tag" >> published-images.txt
+    echo "Push completed successfully."
+  fi
+}
 
 if [[ $BUILD -eq 1 ]]; then
-# Build single target if specified
   if [[ -n "$SINGLE_TARGET" ]]; then
-    echo "Building only target: $SINGLE_TARGET"
-    set +e
-    output=$(docker buildx build -f Dockerfile.firmware -t ${REPOSITORY}/linux-firmware-"${SINGLE_TARGET}":"${FIRMWARE_VERSION}" --target "${SINGLE_TARGET}" --load "${FULL_CACHE_ARGS[@]}" . 2>&1)
-    status=$?
-    set -e
-    if [ $status -ne 0 ]; then
-      echo "Docker build failed:"
-      echo "$output"
-      exit 1
-    fi
+    build_target "$SINGLE_TARGET" "${REPOSITORY}/linux-firmware-${SINGLE_TARGET}:${FIRMWARE_VERSION}"
     echo "Build for $SINGLE_TARGET completed successfully."
-    if [[ $PUSH -eq 1 ]]; then
-      echo "Pushing image ${REPOSITORY}/linux-firmware-${SINGLE_TARGET}:${FIRMWARE_VERSION} to repository..."
-      docker push ${REPOSITORY}/linux-firmware-"${SINGLE_TARGET}":"${FIRMWARE_VERSION}"
-      echo "${REPOSITORY}/linux-firmware-${SINGLE_TARGET}:${FIRMWARE_VERSION}" >> published-images.txt
-      echo "Push completed successfully."
-    fi
-    rm Dockerfile.firmware
+    rm Dockerfile.firmware Dockerfile.base
     exit 0
   fi
 
   echo "Building all firmware targets..."
-
-  ## Build all targets
-  # Build the base target first as it takes a bit of time
-  # No tag needed for base as we dont push it, just build it to speed up the other builds
-  # Export the cache once here so cached runs do not spend time re-uploading it for every target.
-  echo "Building: base"
-  set +e
-  output=$(docker buildx build -f Dockerfile.firmware --target "base" "${FULL_CACHE_ARGS[@]}" . 2>&1)
-  status=$?
-  set -e
-  # shellcheck disable=SC2181
-  if [ $status -ne 0 ]; then
-    echo "Docker build failed:"
-    echo "$output"
-    exit 1
-  fi
-  for folder in $folders; do
-    if [[ $folder =~ ^[0-9] ]]; then
-      target=$(echo "$folder" | rev | tr '.' '-')
-    else
-      target=${folder//./-}
-    fi
-    # check if folder is uppercase, if so, change target to lowercase
-    if [[ $folder =~ ^[A-Z0-9_-]+$ ]]; then
-      target=${target,,}
-    fi
-    echo "Building: $folder"
-    set +e
-    output=$(docker buildx build -f Dockerfile.firmware -t ${REPOSITORY}/linux-firmware-"${target}":"${FIRMWARE_VERSION}" --target "${target}" --load "${CACHE_FROM_ARGS[@]}" . 2>&1)
-    status=$?
-    set -e
-    # shellcheck disable=SC2181
-    if [ $status -ne 0 ]; then
-      echo "Docker build failed:"
-      echo "$output"
-      exit 1
-    fi
-    if [[ $PUSH -eq 1 ]]; then
-      echo "Pushing image ${REPOSITORY}/linux-firmware-${target}:${FIRMWARE_VERSION} to repository..."
-      docker push ${REPOSITORY}/linux-firmware-"${target}":"${FIRMWARE_VERSION}"
-      echo "${REPOSITORY}/linux-firmware-${target}:${FIRMWARE_VERSION}" >> published-images.txt
-      echo "Push completed successfully."
-    fi
+  for entry in "${TARGETS[@]}"; do
+    name=${entry%%|*}
+    build_target "$name" "${REPOSITORY}/linux-firmware-${name}:${FIRMWARE_VERSION}"
   done
-
-  for folder in $intel_folders; do
-    target=${folder//./-}
-    echo "Building: intel-$folder"
-    set +e
-    output=$(docker buildx build -f Dockerfile.firmware -t ${REPOSITORY}/linux-firmware-intel-"${target}":"${FIRMWARE_VERSION}" --target "intel-${target}" --load "${CACHE_FROM_ARGS[@]}" . 2>&1)
-    status=$?
-    set -e
-    # shellcheck disable=SC2181
-    if [ $status -ne 0 ]; then
-      echo "Docker build failed:"
-      echo "$output"
-      exit 1
-    fi
-    if [[ $PUSH -eq 1 ]]; then
-      echo "Pushing image ${REPOSITORY}/linux-firmware-intel-"${target}":"${FIRMWARE_VERSION}" to repository..."
-      docker push ${REPOSITORY}/linux-firmware-intel-"${target}":"${FIRMWARE_VERSION}"
-      echo "${REPOSITORY}/linux-firmware-intel-${target}:${FIRMWARE_VERSION}" >> published-images.txt
-      echo "Push completed successfully."
-    fi
-  done
-
-  for folder in $qcom_folders; do
-    target=${folder//./-}
-    echo "Building: qcom-$folder"
-    set +e
-    output=$(docker buildx build -f Dockerfile.firmware -t ${REPOSITORY}/linux-firmware-qcom-"${target}":"${FIRMWARE_VERSION}" --target "qcom-${target}" --load "${CACHE_FROM_ARGS[@]}" . 2>&1)
-    status=$?
-    set -e
-    # shellcheck disable=SC2181
-    if [ $status -ne 0 ]; then
-      echo "Docker build failed:"
-      echo "$output"
-      exit 1
-    fi
-    if [[ $PUSH -eq 1 ]]; then
-      echo "Pushing image ${REPOSITORY}/linux-firmware-qcom-"${target}":"${FIRMWARE_VERSION}" to repository..."
-      docker push ${REPOSITORY}/linux-firmware-qcom-"${target}":"${FIRMWARE_VERSION}"
-      echo "${REPOSITORY}/linux-firmware-qcom-${target}:${FIRMWARE_VERSION}" >> published-images.txt
-      echo "Push completed successfully."
-    fi
-  done
-
-  echo "Building: intel"
-  set +e
-  output=$(docker buildx build -f Dockerfile.firmware -t ${REPOSITORY}/linux-firmware-intel-generic:"${FIRMWARE_VERSION}" --target "intel-generic" --load "${CACHE_FROM_ARGS[@]}" . 2>&1)
-  status=$?
-  set -e
-  # shellcheck disable=SC2181
-  if [ $status -ne 0 ]; then
-    echo "Docker build failed:"
-    echo "$output"
-    exit 1
-  fi
-  if [[ $PUSH -eq 1 ]]; then
-    echo "Pushing image ${REPOSITORY}/linux-firmware-intel-generic:"${FIRMWARE_VERSION}" to repository..."
-    docker push ${REPOSITORY}/linux-firmware-intel-generic:"${FIRMWARE_VERSION}"
-    echo "${REPOSITORY}/linux-firmware-intel-generic:${FIRMWARE_VERSION}" >> published-images.txt
-    echo "Push completed successfully."
-  fi
-  echo "Building: qcom"
-  set +e
-  output=$(docker buildx build -f Dockerfile.firmware -t ${REPOSITORY}/linux-firmware-qcom-generic:"${FIRMWARE_VERSION}" --target "qcom-generic" --load "${CACHE_FROM_ARGS[@]}" .  2>&1)
-  status=$?
-  set -e
-  # shellcheck disable=SC2181
-  if [ $status -ne 0 ]; then
-    echo "Docker build failed:"
-    echo "$output"
-    exit 1
-  fi
-  if [[ $PUSH -eq 1 ]]; then
-    echo "Pushing image ${REPOSITORY}/linux-firmware-qcom-generic:"${FIRMWARE_VERSION}" to repository..."
-    docker push ${REPOSITORY}/linux-firmware-qcom-generic:"${FIRMWARE_VERSION}"
-    echo "${REPOSITORY}/linux-firmware-qcom-generic:${FIRMWARE_VERSION}" >> published-images.txt
-    echo "Push completed successfully."
-  fi
-  echo "Building: uncategorized"
-  set +e
-  output=$(docker buildx build -f Dockerfile.firmware -t ${REPOSITORY}/linux-firmware-uncategorized:"${FIRMWARE_VERSION}" --target "uncategorized" --load "${CACHE_FROM_ARGS[@]}" . 2>&1)
-  status=$?
-  set -e
-  # shellcheck disable=SC2181
-  if [ $status -ne 0 ]; then
-    echo "Docker build failed:"
-    echo "$output"
-    exit 1
-  fi
-  if [[ $PUSH -eq 1 ]]; then
-    echo "Pushing image ${REPOSITORY}/linux-firmware-uncategorized:"${FIRMWARE_VERSION}" to repository..."
-    docker push ${REPOSITORY}/linux-firmware-uncategorized:"${FIRMWARE_VERSION}"
-    echo "${REPOSITORY}/linux-firmware-uncategorized:${FIRMWARE_VERSION}" >> published-images.txt
-    echo "Push completed successfully."
-  fi
   echo "All builds completed successfully."
 fi
 
@@ -456,5 +371,5 @@ fi
 
 
 # Cleanup
-echo "Removing temporary Dockerfile.firmware"
-rm Dockerfile.firmware
+echo "Removing temporary Dockerfiles"
+rm -f Dockerfile.firmware Dockerfile.base
