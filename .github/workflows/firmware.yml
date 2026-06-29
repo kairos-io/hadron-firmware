@@ -77,6 +77,7 @@ jobs:
           echo "## Published images" > release-notes.md
           echo "" >> release-notes.md
           cat published-images.txt >> release-notes.md
+          cat release-notes.md >> "$GITHUB_STEP_SUMMARY"
       - name: Release sysexts on tag
         uses: softprops/action-gh-release@9d7c94cfd0a1f3ed45544c887983e9fa900f0564
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
