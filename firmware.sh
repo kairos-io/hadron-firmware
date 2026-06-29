@@ -15,7 +15,7 @@ set -euo pipefail
 ##    This is size driven, so any future huge folder is handled the same way without
 ##    changing the script.
 
-FIRMWARE_VERSION="20260622"
+FIRMWARE_VERSION="20260519"
 
 SINGLE_TARGET=""
 DOCKERFILE_ONLY=0
