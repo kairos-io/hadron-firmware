@@ -61,13 +61,13 @@ jobs:
           ./firmware.sh --sysext --private-key .github/keys/PK.key --certificate .github/keys/PK.pem
           mv build signed-sysext
       - name: Upload sysext artifacts
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        if: ${{ github.event_name == 'pull_request' }}
         uses: actions/upload-artifact@v7
         with:
           name: unsigned-sysext
           path: unsigned-sysext/
       - name: Upload signed sysext artifacts
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        if: ${{ github.event_name == 'pull_request' }}
         uses: actions/upload-artifact@v7
         with:
             name: signed-sysext
