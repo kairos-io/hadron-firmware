@@ -75,5 +75,7 @@ jobs:
         uses: softprops/action-gh-release@9d7c94cfd0a1f3ed45544c887983e9fa900f0564
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
         with:
+          fail_on_unmatched_files: false
           files: |
             unsigned-sysext/*
+            published-images.txt

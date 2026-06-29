@@ -241,6 +241,7 @@ if [[ $BUILD -eq 1 ]]; then
     if [[ $PUSH -eq 1 ]]; then
       echo "Pushing image ${REPOSITORY}/linux-firmware-${SINGLE_TARGET}:${FIRMWARE_VERSION} to repository..."
       docker push ${REPOSITORY}/linux-firmware-"${SINGLE_TARGET}":"${FIRMWARE_VERSION}"
+      echo "${REPOSITORY}/linux-firmware-${SINGLE_TARGET}:${FIRMWARE_VERSION}" >> published-images.txt
       echo "Push completed successfully."
     fi
     rm Dockerfile.firmware
@@ -287,6 +288,7 @@ if [[ $BUILD -eq 1 ]]; then
     if [[ $PUSH -eq 1 ]]; then
       echo "Pushing image ${REPOSITORY}/linux-firmware-${target}:${FIRMWARE_VERSION} to repository..."
       docker push ${REPOSITORY}/linux-firmware-"${target}":"${FIRMWARE_VERSION}"
+      echo "${REPOSITORY}/linux-firmware-${target}:${FIRMWARE_VERSION}" >> published-images.txt
       echo "Push completed successfully."
     fi
   done
@@ -307,6 +309,7 @@ if [[ $BUILD -eq 1 ]]; then
     if [[ $PUSH -eq 1 ]]; then
       echo "Pushing image ${REPOSITORY}/linux-firmware-intel-"${target}":"${FIRMWARE_VERSION}" to repository..."
       docker push ${REPOSITORY}/linux-firmware-intel-"${target}":"${FIRMWARE_VERSION}"
+      echo "${REPOSITORY}/linux-firmware-intel-${target}:${FIRMWARE_VERSION}" >> published-images.txt
       echo "Push completed successfully."
     fi
   done
@@ -327,6 +330,7 @@ if [[ $BUILD -eq 1 ]]; then
     if [[ $PUSH -eq 1 ]]; then
       echo "Pushing image ${REPOSITORY}/linux-firmware-qcom-"${target}":"${FIRMWARE_VERSION}" to repository..."
       docker push ${REPOSITORY}/linux-firmware-qcom-"${target}":"${FIRMWARE_VERSION}"
+      echo "${REPOSITORY}/linux-firmware-qcom-${target}:${FIRMWARE_VERSION}" >> published-images.txt
       echo "Push completed successfully."
     fi
   done
@@ -345,6 +349,7 @@ if [[ $BUILD -eq 1 ]]; then
   if [[ $PUSH -eq 1 ]]; then
     echo "Pushing image ${REPOSITORY}/linux-firmware-intel-generic:"${FIRMWARE_VERSION}" to repository..."
     docker push ${REPOSITORY}/linux-firmware-intel-generic:"${FIRMWARE_VERSION}"
+    echo "${REPOSITORY}/linux-firmware-intel-generic:${FIRMWARE_VERSION}" >> published-images.txt
     echo "Push completed successfully."
   fi
   echo "Building: qcom"
@@ -360,6 +365,7 @@ if [[ $BUILD -eq 1 ]]; then
   if [[ $PUSH -eq 1 ]]; then
     echo "Pushing image ${REPOSITORY}/linux-firmware-qcom-generic:"${FIRMWARE_VERSION}" to repository..."
     docker push ${REPOSITORY}/linux-firmware-qcom-generic:"${FIRMWARE_VERSION}"
+    echo "${REPOSITORY}/linux-firmware-qcom-generic:${FIRMWARE_VERSION}" >> published-images.txt
     echo "Push completed successfully."
   fi
   echo "Building: uncategorized"
@@ -376,6 +382,7 @@ if [[ $BUILD -eq 1 ]]; then
   if [[ $PUSH -eq 1 ]]; then
     echo "Pushing image ${REPOSITORY}/linux-firmware-uncategorized:"${FIRMWARE_VERSION}" to repository..."
     docker push ${REPOSITORY}/linux-firmware-uncategorized:"${FIRMWARE_VERSION}"
+    echo "${REPOSITORY}/linux-firmware-uncategorized:${FIRMWARE_VERSION}" >> published-images.txt
     echo "Push completed successfully."
   fi
   echo "All builds completed successfully."
