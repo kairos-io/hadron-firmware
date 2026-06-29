@@ -121,7 +121,13 @@ if [[ $DOCKERFILE_ONLY -eq 0 && $BUILD -eq 0 && $SYSEXT -eq 0 ]]; then
   exit 1
 fi
 
-## Check if firmware version has a revision part (e.g., 20231115-1) and handle it properly as we want to drap that, the revisions are just for us
+## The pushed images are tagged with the full version (e.g. the git/release tag),
+## including any revision suffix, so the image tag always matches the release tag.
+IMAGE_TAG="$FIRMWARE_VERSION"
+
+## Check if firmware version has a revision part (e.g., 20231115-1) and handle it properly as we want to drop that, the revisions are just for us
+## Note: only the linux-firmware checkout uses the stripped version (upstream has no
+## revision tags); the image tag keeps the full version via IMAGE_TAG above.
 if [[ $FIRMWARE_VERSION == *"-"* ]]; then
   FIRMWARE_VERSION="${FIRMWARE_VERSION%%-*}"
 fi
@@ -313,7 +319,7 @@ build_target() {
 
 if [[ $BUILD -eq 1 ]]; then
   if [[ -n "$SINGLE_TARGET" ]]; then
-    build_target "$SINGLE_TARGET" "${REPOSITORY}/linux-firmware-${SINGLE_TARGET}:${FIRMWARE_VERSION}"
+    build_target "$SINGLE_TARGET" "${REPOSITORY}/linux-firmware-${SINGLE_TARGET}:${IMAGE_TAG}"
     echo "Build for $SINGLE_TARGET completed successfully."
     rm Dockerfile.firmware Dockerfile.base
     exit 0
@@ -322,7 +328,7 @@ if [[ $BUILD -eq 1 ]]; then
   echo "Building all firmware targets..."
   for entry in "${TARGETS[@]}"; do
     name=${entry%%|*}
-    build_target "$name" "${REPOSITORY}/linux-firmware-${name}:${FIRMWARE_VERSION}"
+    build_target "$name" "${REPOSITORY}/linux-firmware-${name}:${IMAGE_TAG}"
   done
   echo "All builds completed successfully."
 fi
