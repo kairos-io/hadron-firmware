@@ -16,7 +16,7 @@ jobs:
     runs-on: cncf-ubuntu-32-128-x86
     permissions:
       packages: write
-      contents: read
+      contents: write
       attestations: write
       id-token: write
     steps:
@@ -71,9 +71,19 @@ jobs:
         with:
             name: signed-sysext
             path: signed-sysext/
+      - name: Generate release notes on tag
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          echo "## Published images" > release-notes.md
+          echo "" >> release-notes.md
+          cat published-images.txt >> release-notes.md
+          cat release-notes.md >> "$GITHUB_STEP_SUMMARY"
       - name: Release sysexts on tag
         uses: softprops/action-gh-release@9d7c94cfd0a1f3ed45544c887983e9fa900f0564
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
         with:
+          body_path: release-notes.md
+          fail_on_unmatched_files: false
           files: |
             unsigned-sysext/*
+            published-images.txt
