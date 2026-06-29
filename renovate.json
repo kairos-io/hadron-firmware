@@ -2,5 +2,14 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "fileMatch": ["^firmware\\.sh$"],
+      "matchStrings": ["(?<depName>FIRMWARE_VERSION)=\"(?<currentValue>[^\"]+)\""],
+      "datasourceTemplate": "git-tags",
+      "depNameTemplate": "https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git"
+    }
   ]
 }
