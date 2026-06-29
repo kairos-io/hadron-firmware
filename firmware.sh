@@ -380,6 +380,7 @@ if [[ $BUILD -eq 1 ]]; then
   echo "Building: qcom"
   set +e
   output=$(docker buildx build -f Dockerfile.firmware -t ${REPOSITORY}/linux-firmware-qcom-generic:"${FIRMWARE_VERSION}" --target "qcom-generic" --load "${CACHE_FROM_ARGS[@]}" .  2>&1)
+  status=$?
   set -e
   # shellcheck disable=SC2181
   if [ $status -ne 0 ]; then
