@@ -17,7 +17,7 @@ jobs:
       - name: Extract firmware version
         id: version
         run: |
-          version=$(grep -oP 'FIRMWARE_VERSION="\K[^"]+' firmware.sh)
+          version=$(grep -oP '^FIRMWARE_VERSION="\K[^"]+' firmware.sh)
           echo "version=${version}" >> "$GITHUB_OUTPUT"
       - name: Check if tag exists
         id: tag_check
