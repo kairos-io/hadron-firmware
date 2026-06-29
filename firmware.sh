@@ -28,7 +28,7 @@ venus-1.8 venus-4.2 venus-5.2 venus-5.4 venus-6.0 vpu x1e80100 x1p42100"
 intel_folders="avs catpt ice ipu ish iwlwifi qat vpu vsc"
 
 
-FIRMWARE_VERSION="20260622"
+FIRMWARE_VERSION="20260221"
 
 SINGLE_TARGET=""
 DOCKERFILE_ONLY=0
