@@ -32,7 +32,7 @@
   header h1 { margin: 0 0 6px; font-size: 1.6rem; }
   header p { margin: 0; color: var(--muted); }
   header a { color: var(--accent); text-decoration: none; }
-  main { max-width: 1100px; margin: 0 auto; padding: 20px; }
+  main { max-width: 1400px; margin: 0 auto; padding: 20px; }
   .controls {
     display: flex;
     flex-wrap: wrap;
@@ -71,10 +71,18 @@
     border-bottom: 1px solid var(--border);
     background: var(--panel-2);
   }
-  tbody td { padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tbody td { padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tbody tr.details-row td { border-bottom: 1px solid var(--border); padding: 0; }
   tbody tr:last-child td { border-bottom: none; }
-  tbody tr:hover { background: rgba(255,255,255,.02); }
-  .component { font-weight: 600; }
+  tbody tr.component-row:hover { background: rgba(255,255,255,.02); }
+  .component { font-weight: 600; white-space: nowrap; }
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
   .ref {
     display: flex;
     align-items: center;
@@ -90,23 +98,52 @@
     border-radius: 6px;
     padding: 4px 8px;
     word-break: break-all;
-    max-width: 520px;
+    flex: 1;
+    min-width: 0;
   }
   .none { color: var(--muted); font-style: italic; }
-  button.copy, a.dl {
+  button.btn, a.btn {
     cursor: pointer;
     border: 1px solid var(--border);
     background: var(--panel-2);
     color: var(--text);
     border-radius: 6px;
-    padding: 5px 10px;
+    padding: 6px 12px;
     font-size: .8rem;
     text-decoration: none;
     white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     transition: background .15s, border-color .15s;
   }
-  button.copy:hover, a.dl:hover { background: #2a3038; border-color: var(--accent); }
-  button.copy.copied { background: var(--accent-2); border-color: var(--accent-2); color: #fff; }
+  button.btn:hover, a.btn:hover { background: #2a3038; border-color: var(--accent); }
+  button.btn.copied { background: var(--accent-2); border-color: var(--accent-2); color: #fff; }
+  button.btn:disabled { opacity: .4; cursor: not-allowed; }
+  button.btn:disabled:hover { background: var(--panel-2); border-color: var(--border); }
+  button.btn.docker { border-color: #1d63ed; }
+  button.btn.docker:hover { border-color: #2f81f7; }
+  button.btn .ico { width: 15px; height: 15px; flex: none; }
+  button.btn.toggle .ico { transition: transform .15s; }
+  button.btn.toggle[aria-expanded="true"] .ico { transform: rotate(90deg); }
+  .details {
+    padding: 14px 18px;
+    background: #0b0f14;
+    border-top: 1px solid var(--border);
+  }
+  .details .link-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .details .link-row:last-child { margin-bottom: 0; }
+  .details .link-label {
+    color: var(--muted);
+    font-size: .78rem;
+    min-width: 130px;
+    flex: none;
+  }
   .empty { padding: 40px; text-align: center; color: var(--muted); }
   footer { text-align: center; color: var(--muted); font-size: .8rem; padding: 30px 20px; }
 </style>
@@ -177,17 +214,54 @@
     return Object.keys(map).sort().map(function (k) { return map[k]; });
   }
 
-  function copyButton(text) {
+  function svgIcon(paths, viewBox) {
+    var ns = "http://www.w3.org/2000/svg";
+    var svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("class", "ico");
+    svg.setAttribute("viewBox", viewBox || "0 0 16 16");
+    svg.setAttribute("fill", "currentColor");
+    svg.setAttribute("aria-hidden", "true");
+    var p = document.createElementNS(ns, "path");
+    p.setAttribute("d", paths);
+    svg.appendChild(p);
+    return svg;
+  }
+
+  function dockerIcon() {
+    // Simplified Docker "whale" mark.
+    return svgIcon(
+      "M13.6 7.2c-.3-.2-.9-.3-1.4-.2-.1-.5-.3-.9-.7-1.3l-.3-.2-.2.3c-.3.4-.4 1-.3 1.5 0 .2.1.5.3.7-.2.1-.5.2-1 .2H1.2l-.1.4c-.1.9.1 1.9.6 2.6.6.8 1.5 1.2 2.8 1.2 2.8 0 4.9-1.3 5.9-3.6.4 0 1.3 0 1.7-.9 0-.1.1-.2.2-.4l.1-.2-.2-.1zM3.2 6.6h-1V7.6h1V6.6zm1.4 0h-1V7.6h1V6.6zm1.4 0h-1V7.6h1V6.6zm1.4 0h-1V7.6h1V6.6zM3.2 5.3h-1v1h1v-1zm1.4 0h-1v1h1v-1zm1.4 0h-1v1h1v-1zm1.4 0h-1v1h1v-1zm0-1.3h-1v1h1V4zm-2.8 1.3v-1h-1v1h1z"
+    );
+  }
+
+  function chevronIcon() {
+    return svgIcon("M6 3.5L10.5 8L6 12.5L5 11.5L8.5 8L5 4.5z");
+  }
+
+  function copyIcon() {
+    return svgIcon("M4 2h6a1 1 0 0 1 1 1v1h-1V3H4v7H3V3a1 1 0 0 1 1-1zm2 2h6a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zm0 1v8h6V5H6z");
+  }
+
+  function downloadIcon() {
+    return svgIcon("M7.5 1h1v6.8l2.1-2.1.7.7L8 9.4 4.7 6.4l.7-.7L7.5 7.8V1zM3 12h10v1H3v-1z");
+  }
+
+  // Build a button that copies `text` to the clipboard when clicked.
+  function copyButton(label, text, extraClass, iconFn) {
     var btn = document.createElement("button");
-    btn.className = "copy";
+    btn.className = "btn" + (extraClass ? " " + extraClass : "");
     btn.type = "button";
-    btn.textContent = "Copy";
+    if (iconFn) btn.appendChild(iconFn());
+    var span = document.createElement("span");
+    span.textContent = label;
+    btn.appendChild(span);
     btn.addEventListener("click", function () {
       var done = function () {
-        btn.textContent = "Copied!";
+        var prev = span.textContent;
+        span.textContent = "Copied!";
         btn.classList.add("copied");
         setTimeout(function () {
-          btn.textContent = "Copy";
+          span.textContent = prev;
           btn.classList.remove("copied");
         }, 1200);
       };
@@ -198,6 +272,18 @@
       }
     });
     return btn;
+  }
+
+  function downloadButton(label, url) {
+    var a = document.createElement("a");
+    a.className = "btn";
+    a.href = url;
+    a.setAttribute("download", "");
+    a.appendChild(downloadIcon());
+    var span = document.createElement("span");
+    span.textContent = label;
+    a.appendChild(span);
+    return a;
   }
 
   function fallbackCopy(text, done) {
@@ -211,49 +297,28 @@
     document.body.removeChild(ta);
   }
 
-  function cellRef(text) {
-    var wrap = document.createElement("div");
-    wrap.className = "ref";
-    if (!text) {
-      var none = document.createElement("span");
-      none.className = "none";
-      none.textContent = "—";
-      wrap.appendChild(none);
-      return wrap;
+  // Pick the primary sysext entry (prefer the actual image over signatures).
+  function primarySysext(entries) {
+    if (!entries || !entries.length) return null;
+    for (var i = 0; i < entries.length; i++) {
+      if (!/\.(sig|verity)$/i.test(entries[i].name)) return entries[i];
     }
-    var code = document.createElement("code");
-    code.textContent = text;
-    wrap.appendChild(code);
-    wrap.appendChild(copyButton(text));
-    return wrap;
+    return entries[0];
   }
 
-  function cellSysext(entries) {
-    var wrap = document.createElement("div");
-    if (!entries || !entries.length) {
-      var none = document.createElement("span");
-      none.className = "none";
-      none.textContent = "—";
-      wrap.appendChild(none);
-      return wrap;
-    }
-    entries.forEach(function (e) {
-      var row = document.createElement("div");
-      row.className = "ref";
-      row.style.marginBottom = "6px";
-      var code = document.createElement("code");
-      code.textContent = e.url;
-      row.appendChild(code);
-      row.appendChild(copyButton(e.url));
-      var dl = document.createElement("a");
-      dl.className = "dl";
-      dl.href = e.url;
-      dl.textContent = "Download";
-      dl.setAttribute("download", "");
-      row.appendChild(dl);
-      wrap.appendChild(row);
-    });
-    return wrap;
+  // A single labelled "code + copy" row used inside the expandable details panel.
+  function linkRow(label, url) {
+    var row = document.createElement("div");
+    row.className = "link-row";
+    var lab = document.createElement("span");
+    lab.className = "link-label";
+    lab.textContent = label;
+    row.appendChild(lab);
+    var code = document.createElement("code");
+    code.textContent = url;
+    row.appendChild(code);
+    row.appendChild(copyButton("Copy", url, null, copyIcon));
+    return row;
   }
 
   function render() {
@@ -298,22 +363,89 @@
 
     var table = document.createElement("table");
     var thead = document.createElement("thead");
-    thead.innerHTML = "<tr><th>Component</th><th>Docker image</th><th>Sysext</th></tr>";
+    thead.innerHTML = "<tr><th>Component</th><th style=\"text-align:right\">Actions</th></tr>";
     table.appendChild(thead);
     var tbody = document.createElement("tbody");
     rows.forEach(function (r) {
+      var sysext = primarySysext(r.sysext);
+
       var tr = document.createElement("tr");
+      tr.className = "component-row";
       var tdName = document.createElement("td");
       tdName.className = "component";
       tdName.textContent = r.component;
       tr.appendChild(tdName);
-      var tdImg = document.createElement("td");
-      tdImg.appendChild(cellRef(r.image));
-      tr.appendChild(tdImg);
-      var tdSys = document.createElement("td");
-      tdSys.appendChild(cellSysext(r.sysext));
-      tr.appendChild(tdSys);
+
+      var tdActions = document.createElement("td");
+      var actions = document.createElement("div");
+      actions.className = "actions";
+
+      var dockerBtn = copyButton("Copy docker link", r.image || "", "docker", dockerIcon);
+      if (!r.image) dockerBtn.disabled = true;
+      actions.appendChild(dockerBtn);
+
+      var copySysBtn = copyButton("Copy sysext link", sysext ? sysext.url : "", null, copyIcon);
+      if (!sysext) copySysBtn.disabled = true;
+      actions.appendChild(copySysBtn);
+
+      if (sysext) {
+        actions.appendChild(downloadButton("Download sysext", sysext.url));
+      } else {
+        var dlDisabled = document.createElement("button");
+        dlDisabled.className = "btn";
+        dlDisabled.type = "button";
+        dlDisabled.disabled = true;
+        dlDisabled.appendChild(downloadIcon());
+        var dspan = document.createElement("span");
+        dspan.textContent = "Download sysext";
+        dlDisabled.appendChild(dspan);
+        actions.appendChild(dlDisabled);
+      }
+
+      var toggle = document.createElement("button");
+      toggle.className = "btn toggle";
+      toggle.type = "button";
+      toggle.setAttribute("aria-expanded", "false");
+      toggle.appendChild(chevronIcon());
+      var tlabel = document.createElement("span");
+      tlabel.textContent = "See links";
+      toggle.appendChild(tlabel);
+      actions.appendChild(toggle);
+
+      tdActions.appendChild(actions);
+      tr.appendChild(tdActions);
       tbody.appendChild(tr);
+
+      // Hidden details row with the full links.
+      var detailsTr = document.createElement("tr");
+      detailsTr.className = "details-row";
+      detailsTr.style.display = "none";
+      var detailsTd = document.createElement("td");
+      detailsTd.colSpan = 2;
+      var details = document.createElement("div");
+      details.className = "details";
+      if (r.image) {
+        details.appendChild(linkRow("Docker image", r.image));
+      }
+      (r.sysext || []).forEach(function (e) {
+        details.appendChild(linkRow(e.name, e.url));
+      });
+      if (!r.image && !(r.sysext && r.sysext.length)) {
+        var none = document.createElement("span");
+        none.className = "none";
+        none.textContent = "No links available for this component.";
+        details.appendChild(none);
+      }
+      detailsTd.appendChild(details);
+      detailsTr.appendChild(detailsTd);
+      tbody.appendChild(detailsTr);
+
+      toggle.addEventListener("click", function () {
+        var open = detailsTr.style.display === "none";
+        detailsTr.style.display = open ? "" : "none";
+        toggle.setAttribute("aria-expanded", open ? "true" : "false");
+        tlabel.textContent = open ? "Hide links" : "See links";
+      });
     });
     table.appendChild(tbody);
     wrap.appendChild(table);
