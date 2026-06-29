@@ -128,14 +128,17 @@ if [[ $FIRMWARE_VERSION == *"-"* ]]; then
   FIRMWARE_VERSION="${FIRMWARE_VERSION%%-*}"
 fi
 
-## Build the cache args array for docker buildx build
-CACHE_ARGS=()
+## Build the cache args arrays for docker buildx build
+CACHE_FROM_ARGS=()
+CACHE_EXPORT_ARGS=()
+FULL_CACHE_ARGS=()
 if [[ -n "$CACHE_FROM" ]]; then
-  CACHE_ARGS+=(--cache-from "$CACHE_FROM")
+  CACHE_FROM_ARGS+=(--cache-from "$CACHE_FROM")
 fi
 if [[ -n "$CACHE_TO" ]]; then
-  CACHE_ARGS+=(--cache-to "$CACHE_TO")
+  CACHE_EXPORT_ARGS+=(--cache-to "$CACHE_TO")
 fi
+FULL_CACHE_ARGS=("${CACHE_FROM_ARGS[@]}" "${CACHE_EXPORT_ARGS[@]}")
 
 echo "Generating Dockerfile.firmware for linux-firmware version: $FIRMWARE_VERSION"
 cat <<EOF > Dockerfile.firmware
@@ -250,7 +253,7 @@ if [[ $BUILD -eq 1 ]]; then
   if [[ -n "$SINGLE_TARGET" ]]; then
     echo "Building only target: $SINGLE_TARGET"
     set +e
-    output=$(docker buildx build -f Dockerfile.firmware -t ${REPOSITORY}/linux-firmware-"${SINGLE_TARGET}":"${FIRMWARE_VERSION}" --target "${SINGLE_TARGET}" --load "${CACHE_ARGS[@]}" . 2>&1)
+    output=$(docker buildx build -f Dockerfile.firmware -t ${REPOSITORY}/linux-firmware-"${SINGLE_TARGET}":"${FIRMWARE_VERSION}" --target "${SINGLE_TARGET}" --load "${FULL_CACHE_ARGS[@]}" . 2>&1)
     status=$?
     set -e
     if [ $status -ne 0 ]; then
@@ -274,9 +277,10 @@ if [[ $BUILD -eq 1 ]]; then
   ## Build all targets
   # Build the base target first as it takes a bit of time
   # No tag needed for base as we dont push it, just build it to speed up the other builds
+  # Export the cache once here so cached runs do not spend time re-uploading it for every target.
   echo "Building: base"
   set +e
-  output=$(docker buildx build -f Dockerfile.firmware --target "base" "${CACHE_ARGS[@]}" . 2>&1)
+  output=$(docker buildx build -f Dockerfile.firmware --target "base" "${FULL_CACHE_ARGS[@]}" . 2>&1)
   status=$?
   set -e
   # shellcheck disable=SC2181
@@ -297,7 +301,7 @@ if [[ $BUILD -eq 1 ]]; then
     fi
     echo "Building: $folder"
     set +e
-    output=$(docker buildx build -f Dockerfile.firmware -t ${REPOSITORY}/linux-firmware-"${target}":"${FIRMWARE_VERSION}" --target "${target}" --load "${CACHE_ARGS[@]}" . 2>&1)
+    output=$(docker buildx build -f Dockerfile.firmware -t ${REPOSITORY}/linux-firmware-"${target}":"${FIRMWARE_VERSION}" --target "${target}" --load "${CACHE_FROM_ARGS[@]}" . 2>&1)
     status=$?
     set -e
     # shellcheck disable=SC2181
@@ -318,7 +322,7 @@ if [[ $BUILD -eq 1 ]]; then
     target=${folder//./-}
     echo "Building: intel-$folder"
     set +e
-    output=$(docker buildx build -f Dockerfile.firmware -t ${REPOSITORY}/linux-firmware-intel-"${target}":"${FIRMWARE_VERSION}" --target "intel-${target}" --load "${CACHE_ARGS[@]}" . 2>&1)
+    output=$(docker buildx build -f Dockerfile.firmware -t ${REPOSITORY}/linux-firmware-intel-"${target}":"${FIRMWARE_VERSION}" --target "intel-${target}" --load "${CACHE_FROM_ARGS[@]}" . 2>&1)
     status=$?
     set -e
     # shellcheck disable=SC2181
@@ -339,7 +343,7 @@ if [[ $BUILD -eq 1 ]]; then
     target=${folder//./-}
     echo "Building: qcom-$folder"
     set +e
-    output=$(docker buildx build -f Dockerfile.firmware -t ${REPOSITORY}/linux-firmware-qcom-"${target}":"${FIRMWARE_VERSION}" --target "qcom-${target}" --load "${CACHE_ARGS[@]}" . 2>&1)
+    output=$(docker buildx build -f Dockerfile.firmware -t ${REPOSITORY}/linux-firmware-qcom-"${target}":"${FIRMWARE_VERSION}" --target "qcom-${target}" --load "${CACHE_FROM_ARGS[@]}" . 2>&1)
     status=$?
     set -e
     # shellcheck disable=SC2181
@@ -358,7 +362,7 @@ if [[ $BUILD -eq 1 ]]; then
 
   echo "Building: intel"
   set +e
-  output=$(docker buildx build -f Dockerfile.firmware -t ${REPOSITORY}/linux-firmware-intel-generic:"${FIRMWARE_VERSION}" --target "intel-generic" --load "${CACHE_ARGS[@]}" . 2>&1)
+  output=$(docker buildx build -f Dockerfile.firmware -t ${REPOSITORY}/linux-firmware-intel-generic:"${FIRMWARE_VERSION}" --target "intel-generic" --load "${CACHE_FROM_ARGS[@]}" . 2>&1)
   status=$?
   set -e
   # shellcheck disable=SC2181
@@ -375,7 +379,7 @@ if [[ $BUILD -eq 1 ]]; then
   fi
   echo "Building: qcom"
   set +e
-  output=$(docker buildx build -f Dockerfile.firmware -t ${REPOSITORY}/linux-firmware-qcom-generic:"${FIRMWARE_VERSION}" --target "qcom-generic" --load "${CACHE_ARGS[@]}" .  2>&1)
+  output=$(docker buildx build -f Dockerfile.firmware -t ${REPOSITORY}/linux-firmware-qcom-generic:"${FIRMWARE_VERSION}" --target "qcom-generic" --load "${CACHE_FROM_ARGS[@]}" .  2>&1)
   set -e
   # shellcheck disable=SC2181
   if [ $status -ne 0 ]; then
@@ -391,7 +395,7 @@ if [[ $BUILD -eq 1 ]]; then
   fi
   echo "Building: uncategorized"
   set +e
-  output=$(docker buildx build -f Dockerfile.firmware -t ${REPOSITORY}/linux-firmware-uncategorized:"${FIRMWARE_VERSION}" --target "uncategorized" --load "${CACHE_ARGS[@]}" . 2>&1)
+  output=$(docker buildx build -f Dockerfile.firmware -t ${REPOSITORY}/linux-firmware-uncategorized:"${FIRMWARE_VERSION}" --target "uncategorized" --load "${CACHE_FROM_ARGS[@]}" . 2>&1)
   status=$?
   set -e
   # shellcheck disable=SC2181
