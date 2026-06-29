@@ -1,0 +1,63 @@
+name: Deploy releases page
+
+## After a firmware release tag has been built and published, regenerate the
+## static page that lists every release's components and deploy it to GitHub
+## Pages. It runs when the "Build firmware images" workflow finishes
+## successfully for a tag, and can also be triggered manually.
+on:
+  workflow_run:
+    workflows: ["Build firmware images"]
+    types:
+      - completed
+  release:
+    types: [published, edited, deleted]
+  workflow_dispatch:
+
+## Allow only one concurrent deployment, without cancelling an in-progress one
+## so a running deploy is always allowed to finish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    ## For workflow_run only proceed when the upstream build succeeded for a tag
+    ## push (tag builds set head_branch to the tag name, not "main"). Other
+    ## triggers (release / manual) always run.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch != 'main')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Build site data
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          mkdir -p _site
+          cp site/index.html _site/index.html
+          ./site/build-data.sh _site/data.json
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
