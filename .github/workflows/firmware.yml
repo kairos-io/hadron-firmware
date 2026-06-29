@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   firmware:
-    runs-on: oracle-24cpu-384gb-x86-64
+    runs-on: cncf-ubuntu-32-128-x86
     permissions:
       packages: write
       contents: read
