@@ -9,7 +9,8 @@
       "fileMatch": ["^firmware\\.sh$"],
       "matchStrings": ["(?<depName>FIRMWARE_VERSION)=\"(?<currentValue>[^\"]+)\""],
       "datasourceTemplate": "git-tags",
-      "depNameTemplate": "https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git"
+      "depNameTemplate": "https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git",
+      "versioningTemplate": "loose"
     }
   ]
 }
