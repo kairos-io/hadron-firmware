@@ -67,15 +67,41 @@ COPY --from=ghcr.io/kairos-io/hadron-firmware/linux-firmware-amdgpu:20260622 / /
 COPY --from=ghcr.io/kairos-io/hadron-firmware/linux-firmware-rtw88:20260622 / /
 ```
 
-Build and push it to your own registry:
+Build it:
 
 ```bash
 docker build -t my-registry.example.com/my-hadron:latest .
-docker push my-registry.example.com/my-hadron:latest
 ```
 
-Then use `my-registry.example.com/my-hadron:latest` as the image you deploy /
-upgrade Kairos to, exactly as you would with a plain Hadron image.
+> Important: the image produced above is **not** a bootable/upgradeable Kairos
+> image yet — it is just a Hadron rootfs with extra firmware. A raw Hadron image
+> cannot be used to upgrade a running Kairos node directly. You first have to
+> "kairosify" it (add the Kairos framework, init system integration, etc.) with
+> [`kairos-init`](https://github.com/kairos-io/kairos-init), and then either push
+> the resulting image to upgrade to, or turn it into installable media (ISO, raw
+> disk, etc.) with [AuroraBoot](https://github.com/kairos-io/AuroraBoot).
+
+For example, run `kairos-init` as a build stage on top of the image above so the
+final image is a proper Kairos image you can deploy or upgrade to:
+
+```dockerfile
+FROM quay.io/kairos/kairos-init:latest AS kairos-init
+
+# Turn the Hadron image with firmware into a bootable Kairos image.
+FROM my-registry.example.com/my-hadron:latest
+ARG VERSION=1.0.0
+RUN --mount=type=bind,from=kairos-init,src=/kairos-init,dst=/kairos-init /kairos-init --version "${VERSION}"
+```
+
+```bash
+docker build -t my-registry.example.com/my-kairos:latest .
+docker push my-registry.example.com/my-kairos:latest
+```
+
+Only the resulting `my-registry.example.com/my-kairos:latest` image (or the media
+produced from it with AuroraBoot) can be used to install or upgrade a node. Refer
+to the [Kairos factory documentation](https://kairos.io/docs/reference/kairos-factory/)
+for the full set of `kairos-init` flags and AuroraBoot invocations.
 
 Tips:
 
