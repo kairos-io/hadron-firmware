@@ -24,6 +24,11 @@ consuming them fits your workflow.
 > <https://kairos-io.github.io/hadron-firmware/>. You can also look at the
 > [Releases](https://github.com/kairos-io/hadron-firmware/releases) page directly.
 
+> **Found a bug, or want to request a feature?** Open it on
+> [kairos-io/kairos](https://github.com/kairos-io/kairos/issues), including
+> issues about this repository. Every Kairos issue lives in one place, so you
+> never have to work out which repository to file against.
+
 ## What gets published
 
 Each release corresponds to an upstream `linux-firmware` version (for example
