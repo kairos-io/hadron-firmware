@@ -34,7 +34,13 @@ CACHE_TO=""
 ## Override with --split-threshold-mb.
 SPLIT_THRESHOLD_MB=100
 
-DESTDIR="${DESTDIR:-/usr/local/lib/firmware}"
+## Where the blobs land inside the published images (and therefore inside the
+## sysexts, which are built from those same images). /usr/lib/firmware is the
+## baked-in firmware directory in the Hadron base image; /usr/local is the
+## COS_PERSISTENT mount point, so shipping there made every blob disappear
+## behind the persistent partition on an installed node. See
+## kairos-io/kairos#4290 and kairos-io/hadron#581.
+DESTDIR="${DESTDIR:-/usr/lib/firmware}"
 
 
 while [[ $# -gt 0 ]]; do
@@ -224,6 +230,18 @@ MANIFEST=$(docker run --rm "${BASE_IMAGE_TAG}" sh -c "
     fi
   done
 ")
+
+## The Hadron base image puts the firmware override directory at
+## ${DESTDIR}/updates, a symlink to the persistent partition. A linux-firmware
+## folder with that name would land on top of it, so refuse to build rather
+## than publish a layer that breaks the override. No upstream folder is called
+## that today; this is here so a future release cannot slip it through.
+if grep -qE '^(DIR|GENERIC)\|updates(\||$)' <<< "$MANIFEST"; then
+  echo "error: linux-firmware ${FIRMWARE_VERSION} has a top level folder named 'updates'," >&2
+  echo "       which collides with the firmware override symlink at ${DESTDIR}/updates." >&2
+  echo "       Ship it under a different name before publishing." >&2
+  exit 1
+fi
 
 TARGETS=()  # name|src|dest|mode
 while IFS= read -r line; do
