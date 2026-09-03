@@ -210,6 +210,16 @@ Nothing has to be set on the kernel cmdline. Note that this directory is *not*
 where the firmware images and sysexts install to; it is reserved for local
 overrides, so a folder named `updates` never appears in a published target.
 
+**Match or beat the compression of the blob you are replacing.** The kernel
+retries the whole search path per suffix rather than per directory: it tries
+every directory uncompressed, then every directory with `.zst`, then every
+directory with `.xz` (`_request_firmware` in
+`drivers/base/firmware_loader/main.c`). The images here are built with upstream
+`copy-firmware.sh --zstd`, so the shipped blobs are `.zst`. An uncompressed
+override, as above, wins. A `.zst` override wins. An `.xz` override loses to the
+shipped `.zst` and does so silently, because the `.zst` stage runs first and
+never reaches `.xz`.
+
 ## Building it yourself
 
 Everything is driven by the [`firmware.sh`](firmware.sh) script, which discovers
