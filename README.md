@@ -40,7 +40,8 @@ and loose files at the root are grouped into an `uncategorized` target).
 For every target you get:
 
 - An OCI image: `ghcr.io/kairos-io/hadron-firmware/linux-firmware-<target>:<version>`
-  Inside the image the files live under `/usr/local/lib/firmware/...`.
+  Inside the image the files live under `/usr/lib/firmware/...`, the firmware
+  directory the kernel searches by default.
 - A sysext file attached to the release:
   `linux-firmware-<target>_<version>.sysext.raw`
 
@@ -60,7 +61,7 @@ This is the same pattern used by the Hadron
 build a derived image `FROM` your Hadron base and `COPY` the firmware layer in.
 
 Because the firmware images are `FROM scratch` images that already place files at
-`/usr/local/lib/firmware/...`, you just copy their whole root (`/`) into your
+`/usr/lib/firmware/...`, you just copy their whole root (`/`) into your
 image root (`/`):
 
 ```dockerfile
@@ -190,6 +191,34 @@ kairos-agent sysext enable --active --now linux-firmware-amdgpu
 > The keys under `.github/keys/` in this repository are **test keys only** and are
 > considered compromised. Never use them in production — always sign with your own
 > Trusted Boot keys.
+
+## Overriding a single blob on a running node
+
+`/usr/lib/firmware` is part of the read-only OS image, so it is not the place to
+patch a single blob on a node that is already installed. The Hadron base image
+symlinks `/usr/lib/firmware/updates` to `/usr/local/lib/firmware`, which lives on
+the persistent partition, and the kernel searches `/lib/firmware/updates` before
+`/lib/firmware`. Dropping a file there overrides the one shipped in the image,
+and removing it restores the shipped one:
+
+```bash
+mkdir -p /usr/local/lib/firmware/amdgpu
+cp my-fixed-blob.bin /usr/local/lib/firmware/amdgpu/
+```
+
+Nothing has to be set on the kernel cmdline. Note that this directory is *not*
+where the firmware images and sysexts install to; it is reserved for local
+overrides, so a folder named `updates` never appears in a published target.
+
+**Match or beat the compression of the blob you are replacing.** The kernel
+retries the whole search path per suffix rather than per directory: it tries
+every directory uncompressed, then every directory with `.zst`, then every
+directory with `.xz` (`_request_firmware` in
+`drivers/base/firmware_loader/main.c`). The images here are built with upstream
+`copy-firmware.sh --zstd`, so the shipped blobs are `.zst`. An uncompressed
+override, as above, wins. A `.zst` override wins. An `.xz` override loses to the
+shipped `.zst` and does so silently, because the `.zst` stage runs first and
+never reaches `.xz`.
 
 ## Building it yourself
 
