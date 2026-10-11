@@ -27,14 +27,19 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    ## For workflow_run only proceed when the upstream build succeeded for a tag
-    ## push (tag builds set head_branch to the tag name, not "main"). Other
-    ## triggers (release / manual) always run.
+    ## For workflow_run only proceed when the upstream build succeeded for a
+    ## tag (tag builds set head_branch to the tag name, not "main"). That build
+    ## is normally a dispatch rather than a push: auto-tag.yml pushes the tag
+    ## with the workflow token, which starts no run, so it starts the build
+    ## itself with `gh workflow run`. Requiring a push skipped every release
+    ## after 20260810, the last tag a person pushed by hand. Other triggers
+    ## (release / manual) always run.
     if: >-
       github.event_name != 'workflow_run' ||
       (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push' &&
-       github.event.workflow_run.head_branch != 'main')
+       github.event.workflow_run.head_branch != 'main' &&
+       (github.event.workflow_run.event == 'push' ||
+        github.event.workflow_run.event == 'workflow_dispatch'))
     steps:
       - name: Checkout
         uses: actions/checkout@v7
