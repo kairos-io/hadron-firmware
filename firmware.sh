@@ -42,6 +42,16 @@ SPLIT_THRESHOLD_MB=100
 ## kairos-io/kairos#4290 and kairos-io/hadron#581.
 DESTDIR="${DESTDIR:-/usr/lib/firmware}"
 
+## A push can fail on a registry side transient. ghcr answers "unknown blob" when
+## the blob upload a push has just started is no longer resolvable at the moment it
+## is committed, and under set -e that single failure ends the whole run: the images
+## after it are never pushed, published-images.txt dies with the step, and the
+## release manifest built from that file is never written. Every push therefore gets
+## a small retry budget, because a repeat push restarts the blob upload.
+## See kairos-io/kairos#5563.
+PUSH_ATTEMPTS="${PUSH_ATTEMPTS:-3}"
+PUSH_RETRY_DELAY="${PUSH_RETRY_DELAY:-5}"
+
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -315,6 +325,25 @@ if [[ $DOCKERFILE_ONLY -eq 1 ]]; then
   exit 0
 fi
 
+## Push one image, retrying a failed attempt with a growing delay. Fails only once
+## the budget is spent, and says how many attempts that took.
+push_image() {
+  local tag="$1" attempt=1 delay="$PUSH_RETRY_DELAY"
+  while true; do
+    if docker push "$tag"; then
+      return 0
+    fi
+    if [[ $attempt -ge $PUSH_ATTEMPTS ]]; then
+      echo "Pushing $tag failed on all $PUSH_ATTEMPTS attempts."
+      return 1
+    fi
+    echo "Pushing $tag failed (attempt $attempt of $PUSH_ATTEMPTS), retrying in ${delay}s..."
+    sleep "$delay"
+    attempt=$((attempt + 1))
+    delay=$((delay * 2))
+  done
+}
+
 build_target() {
   local target="$1" tag="$2"
   echo "Building: $target"
@@ -329,7 +358,9 @@ build_target() {
   fi
   if [[ $PUSH -eq 1 ]]; then
     echo "Pushing image $tag to repository..."
-    docker push "$tag"
+    if ! push_image "$tag"; then
+      exit 1
+    fi
     echo "$tag" >> published-images.txt
     echo "Push completed successfully."
   fi
