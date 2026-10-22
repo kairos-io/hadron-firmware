@@ -28,7 +28,14 @@ releases=$(gh api --paginate "repos/${REPO}/releases" \
   -q '.[] | {tag: .tag_name, html_url: .html_url, published_at: .published_at, prerelease: .prerelease, assets: [.assets[] | {name: .name, id: .id}]}' \
   | jq -s '.')
 
-combined='[]'
+## One entry per release, written as a JSON stream rather than accumulated in a
+## shell variable. Every release.json here is ~57 KB, and Linux caps a single
+## argv entry at MAX_ARG_STRLEN (131072 bytes, 32 pages, not configurable), so
+## a `jq --argjson` holding the whole collection died with "Argument list too
+## long" once the third release landed.
+entries=$(mktemp)
+trap 'rm -f "${entries}"' EXIT
+
 while IFS= read -r rel; do
   [[ -z "$rel" ]] && continue
   tag=$(jq -r '.tag' <<<"$rel")
@@ -53,7 +60,7 @@ while IFS= read -r rel; do
     continue
   fi
 
-  entry=$(jq -n \
+  jq -nc \
     --arg tag "$tag" \
     --arg url "$html_url" \
     --arg published "$published_at" \
@@ -66,18 +73,18 @@ while IFS= read -r rel; do
       prerelease: $prerelease,
       images: (($rj.images // []) | add // {}),
       sysext: (($rj.sysext // []) | add // {})
-    }')
-  combined=$(jq --argjson e "$entry" '. += [$e]' <<<"$combined")
+    }' >> "$entries"
   echo "  - ${tag}: added" >&2
 done < <(jq -c '.[]' <<<"$releases")
 
 ## Sort releases by published date (newest first), falling back to tag order.
-jq -n --argjson r "$combined" --arg repo "$REPO" \
+## The stream is read from a file so the payload never goes through argv.
+jq -s --arg repo "$REPO" \
   '{
     generated: (now | todate),
     repo: $repo,
-    releases: ($r | sort_by(.published_at) | reverse)
-  }' > "$OUT"
+    releases: (sort_by(.published_at) | reverse)
+  }' "$entries" > "$OUT"
 
 count=$(jq '.releases | length' "$OUT")
 echo "Wrote ${count} release(s) to ${OUT}" >&2
